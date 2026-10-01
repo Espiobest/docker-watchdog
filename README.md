@@ -74,6 +74,8 @@ docker compose -p watchdog-demo --profile service down
 
 Confirm actions with `y`; cancel with `n` or `Esc`. Stopping through Watchdog saves a recovery pause so it stays stopped across Watchdog restarts. A successful start/restart resumes recovery if globally enabled, preserving the retry budget. `p` keeps monitoring active; it does not pause the container itself.
 
+Successful Watchdog stops show `stopped`, including forced stops with a nonzero exit code. External nonzero exits still show `crashed`; polling cannot reliably identify stops made in another app.
+
 ## Logs and API
 
 ```sh

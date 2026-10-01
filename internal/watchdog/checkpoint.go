@@ -18,6 +18,8 @@ type Checkpoint struct {
 	ExpectOwnStart bool        `json:"expect_own_start"`
 	RecoveryPaused bool        `json:"recovery_paused"`
 	SeenRunning    bool        `json:"seen_running"`
+	StoppedByUser  bool        `json:"stopped_by_user"`
+	StoppedStart   time.Time   `json:"stopped_start"`
 }
 
 // Journal belongs to the consumer: storage implementations need only load
@@ -34,6 +36,7 @@ func (p *Policy) Snapshot() Checkpoint {
 		LastCount: p.lastCount, LastStart: p.lastStart,
 		Crashes: append([]time.Time(nil), p.crashes...), ExpectOwnStart: p.expectOwnStart,
 		RecoveryPaused: p.recoveryPaused, SeenRunning: p.seenRunning,
+		StoppedByUser: p.stoppedByUser, StoppedStart: p.stoppedStart,
 	}
 }
 
@@ -47,6 +50,8 @@ func (p *Policy) Restore(checkpoint Checkpoint) {
 	p.expectOwnStart = checkpoint.ExpectOwnStart
 	p.recoveryPaused = checkpoint.RecoveryPaused
 	p.seenRunning = checkpoint.SeenRunning
+	p.stoppedByUser = checkpoint.StoppedByUser
+	p.stoppedStart = checkpoint.StoppedStart
 	// Before manual controls, only running containers could be initialized.
 	if checkpoint.Version == 0 && checkpoint.Initialized {
 		p.seenRunning = true

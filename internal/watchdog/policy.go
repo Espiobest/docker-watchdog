@@ -20,6 +20,8 @@ type Policy struct {
 	expectOwnStart bool
 	recoveryPaused bool
 	seenRunning    bool
+	stoppedByUser  bool
+	stoppedStart   time.Time
 }
 
 func NewPolicy(config Config) *Policy {
@@ -46,8 +48,8 @@ func (p *Policy) SkipAttempt() {
 
 func (p *Policy) Evaluate(sample Sample, now time.Time) Decision {
 	looping := p.observeStarts(sample, now)
-	decision := classify(sample)
-	if looping && (sample.State == container.StateRunning ||
+	decision := p.classify(sample)
+	if looping && !p.stoppedByUser && (sample.State == container.StateRunning ||
 		sample.State == container.StateRestarting || sample.State == container.StateExited) {
 		decision.Status = StatusCrashLoop
 		decision.Reason = "repeated starts detected within crash window"
@@ -98,6 +100,19 @@ func (p *Policy) Evaluate(sample Sample, now time.Time) Decision {
 	decision.Attempts = p.attempts
 	decision.NextRetry = p.nextRetry
 	return decision
+}
+
+// A successful explicit stop belongs to one process lifetime. A subsequent
+// start, even between polls, must not hide a later unexpected exit.
+func (p *Policy) classify(sample Sample) Decision {
+	if sample.State == container.StateRunning || sample.State == container.StateRestarting ||
+		!sample.StartedAt.Equal(p.stoppedStart) {
+		p.stoppedByUser = false
+	}
+	if p.stoppedByUser && sample.State == container.StateExited {
+		return Decision{Status: StatusStopped, Reason: "stopped by user through Watchdog"}
+	}
+	return classify(sample)
 }
 
 func classify(sample Sample) Decision {

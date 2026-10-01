@@ -28,6 +28,8 @@ func TestStopPersistsPauseBeforeDockerMutation(t *testing.T) {
 			t.Fatalf("stop preceded durable maintenance state: %+v", saved)
 		}
 		stopped = true
+		sample.State, sample.ExitCode = "exited", 137
+		f.containers["a"] = sample
 		return nil
 	}}
 	journal := journalStub{record: func(_ context.Context, _ Event, checkpoint *Checkpoint) error {
@@ -46,8 +48,29 @@ func TestStopPersistsPauseBeforeDockerMutation(t *testing.T) {
 	restored := NewPolicy(c)
 	restored.Restore(saved)
 	exited := Sample{State: "exited", ExitCode: 137}
-	if d := restored.Evaluate(exited, time.Now().Add(time.Hour)); d.Restart || !d.RecoveryPaused || d.Attempts != 2 {
+	if d := restored.Evaluate(exited, time.Now().Add(time.Hour)); d.Status != StatusStopped || d.Restart || !d.RecoveryPaused || d.Attempts != 2 {
 		t.Fatalf("restored maintenance mode permitted recovery: %+v", d)
+	}
+}
+
+func TestIntentionalStopDoesNotHideLaterCrash(t *testing.T) {
+	started := time.Now().Add(-time.Hour)
+	for _, observedRunning := range []bool{true, false} {
+		p := NewPolicy(testConfig())
+		p.Restore(Checkpoint{Version: 1, RecoveryPaused: true, StoppedByUser: true, StoppedStart: started})
+		sample := Sample{State: "exited", ExitCode: 137, StartedAt: started}
+		if d := p.Evaluate(sample, time.Now()); d.Status != StatusStopped {
+			t.Fatalf("intentional stop: %+v", d)
+		}
+		sample.StartedAt = started.Add(time.Minute)
+		if observedRunning {
+			sample.State = "running"
+			p.Evaluate(sample, time.Now())
+		}
+		sample.State = "exited"
+		if d := p.Evaluate(sample, time.Now()); d.Status != StatusCrashed {
+			t.Fatalf("later crash hidden: %+v", d)
+		}
 	}
 }
 

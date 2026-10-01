@@ -136,6 +136,7 @@ func (r Runner) control(ctx context.Context, id string, command Command, policy 
 		if err := validateCommand(command, fresh.State); err != nil {
 			return err
 		}
+		sample = fresh
 		switch command {
 		case CommandStop:
 			return engine.Stop(ctx, id)
@@ -153,7 +154,11 @@ func (r Runner) control(ctx context.Context, id string, command Command, policy 
 		return fmt.Errorf("%s failed; recovery remains paused: %w", command, err)
 	}
 
-	if command != CommandStop {
+	if command == CommandStop {
+		policy.stoppedByUser = true
+		policy.stoppedStart = sample.StartedAt
+	} else {
+		policy.stoppedByUser = false
 		policy.expectOwnStart = true
 		policy.seenRunning = true
 		policy.recoveryPaused = false
@@ -161,10 +166,17 @@ func (r Runner) control(ctx context.Context, id string, command Command, policy 
 		// its automatic retry budget.
 		policy.nextRetry = time.Now().Add(policy.backoff())
 	}
-	if fresh, inspectErr := r.inspect(ctx, slots, id); inspectErr == nil {
+	fresh, inspectErr := r.inspect(ctx, slots, id)
+	if inspectErr == nil {
 		sample = fresh
+	} else {
+		// The command succeeded, but its current state is not yet known.
+		sample.State = ""
 	}
 	event = controlEvent(sample, policy)
+	if inspectErr != nil {
+		event.Error = fmt.Sprintf("inspect after %s: %v", command, inspectErr)
+	}
 	event.Action = completedAction(command)
 	checkpoint = policy.Snapshot()
 	if !r.publish(ctx, events, event, &checkpoint) {
@@ -196,7 +208,7 @@ func (r Runner) setRecoveryPaused(ctx context.Context, events chan<- Event, samp
 // No policy evaluation here: confirming a manual action must not reserve an
 // unrelated automatic restart or consume another retry.
 func controlEvent(sample Sample, policy *Policy) Event {
-	decision := classify(sample)
+	decision := policy.classify(sample)
 	decision.Attempts = policy.attempts
 	decision.RecoveryPaused = policy.recoveryPaused
 	decision.NextRetry = policy.nextRetry

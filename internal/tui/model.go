@@ -196,10 +196,10 @@ func (m model) pageSize() int {
 		extra = 1
 	}
 	switch {
-	case m.height >= 25:
-		return max(1, m.height-23-extra)
-	case m.height >= 20:
-		return max(1, m.height-18-extra)
+	case m.height >= 26:
+		return max(1, m.height-24-extra)
+	case m.height >= 21:
+		return max(1, m.height-19-extra)
 	default:
 		return max(1, m.height-12-extra)
 	}

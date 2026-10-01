@@ -9,6 +9,7 @@ import (
 	"docker-watchdog/internal/watchdog"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/moby/moby/api/types/container"
 )
 
 var (
@@ -24,7 +25,7 @@ var (
 
 func (m model) View() string {
 	if m.width < 48 || m.height < 15 {
-		return "Watchdog needs a terminal of at least 48 × 15.\nResize the window, or press q to quit."
+		return "Watchdog needs a terminal of at least 48 x 15.\nResize the window, or press q to quit."
 	}
 	width := m.width - 4
 	mode := "AUTO RECOVERY OFF"
@@ -62,12 +63,12 @@ func (m model) View() string {
 		return lipgloss.NewStyle().Padding(1, 2).MaxWidth(m.width).MaxHeight(m.height).Render(content)
 	}
 	rows := m.ordered()
-	if len(rows) > 0 && m.height >= 20 {
+	if len(rows) > 0 && m.height >= 21 {
 		sections = append(sections, "", m.details(rows[m.cursor], width))
 	} else if len(rows) == 0 {
 		sections = append(sections, "", dim.Render("Waiting for matching containers…"))
 	}
-	if m.height >= 25 {
+	if m.height >= 26 {
 		sections = append(sections, "", dim.Render("RECENT TRANSITIONS"))
 		for _, transition := range m.recent {
 			sections = append(sections, dim.Render(fit(transition, width)))
@@ -90,21 +91,21 @@ func (m model) View() string {
 
 func (m model) table(width int) string {
 	wide := width >= 100
-	nameWidth := max(12, width-61)
+	nameWidth := max(8, width-66)
 	if wide {
-		nameWidth = width - 86
+		nameWidth = width - 91
 	}
-	compact := width < 70
+	compact := width < 74
 	if compact {
 		nameWidth = width - 22
 	}
 	nameWidth = min(nameWidth, 36)
 	heading := "  " + cell("CONTAINER", nameWidth) + "  " + cell("STATUS", 17)
 	if !compact {
-		heading += "  " + cell("CPU", 7) + "  " + cell("MEMORY", 12) + "  " + cell("RETRIES", 7) + " AGE"
+		heading += "  " + cell("CPU", 7) + "  " + cell("MEMORY", 12) + "  " + cell("RETRIES", 7) + " " + cell("UPTIME", 12)
 	}
 	if wide {
-		heading += "     RX / TX"
+		heading += "  RX / TX"
 	}
 	lines := []string{dim.Render(heading), line.Render(strings.Repeat("─", width))}
 	rows := m.ordered()
@@ -132,9 +133,13 @@ func (m model) table(width int) string {
 				cpu = fmt.Sprintf("%.1f%%", event.CPUPercent)
 				memory = bytes(event.MemoryBytes)
 			}
-			age := max(time.Duration(0), m.now.Sub(event.Time)).Round(time.Second).String()
+
+			uptime := "—"
+			if event.State == container.StateRunning && !event.StartedAt.IsZero() {
+				uptime = max(time.Duration(0), m.now.Sub(event.StartedAt)).Truncate(time.Second).String()
+			}
 			row += "  " + cell(cpu, 7) + "  " + cell(memory, 12) + "  " +
-				cell(fmt.Sprintf("%d/%d", event.Attempts, m.options.MaxRetries), 7) + " " + cell(age, 5)
+				cell(fmt.Sprintf("%d/%d", event.Attempts, m.options.MaxRetries), 7) + " " + cell(uptime, 12)
 		}
 		if wide {
 			network := "—"
@@ -156,6 +161,12 @@ func (m model) details(event watchdog.Event, width int) string {
 	id := event.ID[:min(12, len(event.ID))]
 	heading := bright.Foreground(accent).Render(fit(name+"  "+id, width))
 	info := fmt.Sprintf("Docker: %s  ·  health: %s  ·  engine restarts: %d", event.State, event.Health, event.RestartCount)
+	startedAt := "Last started: unknown"
+	if !event.StartedAt.IsZero() {
+		startedAt = "Last started: " + event.StartedAt.Local().Format("2006-01-02 15:04:05 MST")
+	} else if event.State == container.StateCreated {
+		startedAt = "Last started: never"
+	}
 	note := event.Reason
 	if event.Error != "" {
 		note = event.Error
@@ -176,6 +187,7 @@ func (m model) details(event watchdog.Event, width int) string {
 	return strings.Join([]string{
 		line.Render(strings.Repeat("─", width)), heading,
 		dim.Render(fit(clean(info), width)), fit(clean(note), width),
+		dim.Render(fit(startedAt, width)),
 		dim.Render(fit(action, width)),
 	}, "\n")
 }

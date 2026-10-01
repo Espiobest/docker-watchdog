@@ -28,7 +28,8 @@ func fixture() model {
 			Time: m.now.Add(-time.Second),
 			Sample: watchdog.Sample{
 				ID: fmt.Sprintf("a1b2c3d4e5f%d", index), Name: names[index],
-				State: "running", Health: "healthy", CPUPercent: float64(index*7) + 1.4,
+				State: "running", StartedAt: m.now.Add(-12*time.Hour - 30*time.Minute - 15*time.Second),
+				Health: "healthy", CPUPercent: float64(index*7) + 1.4,
 				MemoryBytes: uint64(64+index*42) * 1024 * 1024, MemoryLimit: 1024 * 1024 * 1024,
 				NetworkRX: 720000, NetworkTX: 128000, StatsOK: true,
 			},
@@ -60,16 +61,25 @@ func fixture() model {
 }
 
 func TestDashboardFitsTerminalAndKeepsControlsVisible(t *testing.T) {
-	for _, size := range [][2]int{{48, 15}, {80, 24}, {100, 30}, {120, 32}} {
+	for _, size := range [][2]int{{48, 15}, {80, 20}, {80, 21}, {80, 24}, {80, 25}, {80, 26}, {100, 30}, {120, 32}} {
 		m := fixture()
 		m.width, m.height = size[0], size[1]
 		for index := range 30 {
 			id := fmt.Sprint(index)
-			m.rows[id] = watchdog.Event{Sample: watchdog.Sample{ID: id, Name: "more-" + id}, Decision: watchdog.Decision{Status: watchdog.StatusHealthy}}
+			m.rows[id] = watchdog.Event{
+				Sample:   watchdog.Sample{ID: id, Name: "more-" + id, State: "running", StartedAt: m.now.Add(-12*time.Hour - 30*time.Minute - 15*time.Second)},
+				Decision: watchdog.Decision{Status: watchdog.StatusHealthy},
+			}
 		}
 		view := m.View()
+		if size[0] >= 80 && size[1] >= 21 && (!strings.Contains(ansi.Strip(view), "12h30m15s") || !strings.Contains(ansi.Strip(view), "Last started:")) {
+			t.Errorf("container timing missing at %v", size)
+		}
 		if !strings.Contains(ansi.Strip(view), "q quit") {
 			t.Errorf("footer clipped at %v", size)
+		}
+		if !strings.Contains(ansi.Strip(view), "p recovery") {
+			t.Errorf("action footer clipped at %v", size)
 		}
 		if lipgloss.Height(view) > size[1] {
 			t.Errorf("height overflow at %v: %d", size, lipgloss.Height(view))

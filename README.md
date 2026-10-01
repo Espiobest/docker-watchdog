@@ -83,3 +83,7 @@ The local API runs at `http://127.0.0.1:9780`:
 - `/healthz` — process/storage liveness
 
 Use `--help` for options. See the [technical reference](docs/reference.md) for recovery rules, configuration, Docker deployment, API details, and development commands.
+
+## License
+
+[MIT](LICENSE) © 2026 Espiobest.

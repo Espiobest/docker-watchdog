@@ -1,0 +1,56 @@
+services:
+  watchdog:
+    build: .
+    profiles: ["service"]
+    command:
+      - --label=watchdog.demo=true
+      - --auto-restart
+      - --recover-exited
+      - --output=json
+      - --db=/data/watchdog.db
+      - --listen=0.0.0.0:9780
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - watchdog-data:/data
+    ports:
+      - "127.0.0.1:9780:9780"
+    stop_grace_period: 35s
+
+  healthy:
+    image: alpine:3.23
+    labels:
+      watchdog.demo: "true"
+    command: ["sh", "-c", "while :; do sleep 1; done"]
+    healthcheck:
+      test: ["CMD", "true"]
+      interval: 2s
+      timeout: 1s
+      retries: 1
+
+  unhealthy:
+    image: alpine:3.23
+    labels:
+      watchdog.demo: "true"
+    command: ["sh", "-c", "while :; do sleep 1; done"]
+    healthcheck:
+      test: ["CMD", "false"]
+      interval: 2s
+      timeout: 1s
+      retries: 1
+
+  crashloop:
+    image: alpine:3.23
+    labels:
+      watchdog.demo: "true"
+    command: ["sh", "-c", "sleep 4; exit 1"]
+    restart: "on-failure"
+
+  recoverable:
+    image: alpine:3.23
+    labels:
+      watchdog.demo: "true"
+    # Long enough to be discovered before its first unexpected exit.
+    command: ["sh", "-c", "sleep 20; exit 1"]
+
+volumes:
+  watchdog-data:

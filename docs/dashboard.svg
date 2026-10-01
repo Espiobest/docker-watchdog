@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1060" height="691" viewBox="0 0 1060 691">
+<svg xmlns="http://www.w3.org/2000/svg" width="1060" height="714" viewBox="0 0 1060 714">
 <title>Docker Watchdog terminal dashboard — illustrative test fixture</title>
-<rect width="1060" height="691" rx="12" fill="#111827"/>
+<rect width="1060" height="714" rx="12" fill="#111827"/>
 <path d="M0 42H1060" stroke="#263247"/>
 <circle cx="22" cy="21" r="5" fill="#f87171"/>
 <circle cx="40" cy="21" r="5" fill="#fbbf24"/>
@@ -41,5 +41,6 @@
 <text x="37" y="543" fill="#8a8a8a" font-family="Cascadia Code,DejaVu Sans Mono,monospace" font-size="14" font-weight="normal" xml:space="preserve" textLength="314.5" lengthAdjust="spacingAndGlyphs">14:30:44  payments-worker  →  backoff</text>
 <text x="37" y="566" fill="#8a8a8a" font-family="Cascadia Code,DejaVu Sans Mono,monospace" font-size="14" font-weight="normal" xml:space="preserve" textLength="331.5" lengthAdjust="spacingAndGlyphs">14:30:44  event-consumer  →  crash-loop</text>
 <text x="37" y="589" fill="#8a8a8a" font-family="Cascadia Code,DejaVu Sans Mono,monospace" font-size="14" font-weight="normal" xml:space="preserve" textLength="374" lengthAdjust="spacingAndGlyphs">14:30:44  legacy-service  →  retry-exhausted</text>
-<text x="37" y="635" fill="#8a8a8a" font-family="Cascadia Code,DejaVu Sans Mono,monospace" font-size="14" font-weight="normal" xml:space="preserve" textLength="323" lengthAdjust="spacingAndGlyphs">↑/↓ j/k select   s sort: name   q quit</text>
+<text x="37" y="635" fill="#8a8a8a" font-family="Cascadia Code,DejaVu Sans Mono,monospace" font-size="14" font-weight="normal" xml:space="preserve" textLength="238" lengthAdjust="spacingAndGlyphs">↑/↓ select · s sort · q quit</text>
+<text x="37" y="658" fill="#8a8a8a" font-family="Cascadia Code,DejaVu Sans Mono,monospace" font-size="14" font-weight="normal" xml:space="preserve" textLength="348.5" lengthAdjust="spacingAndGlyphs">x stop · a start · r restart · p recovery</text>
 </svg>

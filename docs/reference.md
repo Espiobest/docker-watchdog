@@ -20,7 +20,7 @@ flowchart LR
     DB --> API[Read-only HTTP API]
 ```
 
-1. Discovery lists containers matching the optional label. It adopts running/restarting containers and retains their workers when they later stop. With exit recovery enabled, previously tracked exited containers can also be restored from the journal.
+1. Discovery lists containers matching the optional label. The dashboard includes stopped containers for manual controls; log/service mode adopts running/restarting containers and retains their workers when they stop. With exit recovery enabled, previously tracked exited containers can also be restored from the journal. Merely discovering a stopped container does not make it eligible for automatic exit recovery.
 2. A worker inspects its container and fetches a bounded, non-streaming stats response. The shared semaphore limits simultaneous Docker operations.
 3. The policy classifies Docker lifecycle and health separately from watchdog assessments such as `backoff` and `retry-exhausted`. It observes new starts to detect loops and interrupt the stable-health timer.
 4. An eligible failure first waits 5 seconds. Subsequent cooldowns are 10, 20, 40 seconds, up to the configured maximum. Only three attempts are allowed by default.
@@ -30,7 +30,7 @@ flowchart LR
 
 ### Recovery rules and limits
 
-- **Observe-only by default.** `--auto-restart` enables mutations.
+- **Automatic recovery is off by default.** `--auto-restart` enables automatic restarts. Dashboard actions are available independently and require confirmation.
 - **Exit recovery is separate.** `--recover-exited` permits recovery of previously observed containers that exit nonzero. Clean exits remain stopped. An external manual stop can produce a nonzero exit; polling cannot reliably distinguish that from a crash.
 - **Paused, removing, dead, and health-starting containers are not restarted.** A crash-loop alert alone does not kill a currently healthy process.
 - **Docker restart policies take precedence.** Watchdog does not restart containers configured with `always`, `unless-stopped`, or `on-failure`, including unhealthy ones. Docker itself generally responds to exits, not health-check failures; use restart policy `no` if Watchdog should own recovery.
@@ -39,6 +39,14 @@ flowchart LR
 - **One controller per container set.** Different database files do not coordinate ownership. Avoid running multiple watchdog processes against overlapping labels.
 - **Polling has limits.** Very short-lived containers can appear and disappear between discoveries. Historical restarts before the first observation are not automatically classified as a new crash loop.
 - **No exactly-once claim.** If the process dies during an API request, the reserved attempt remains spent even if the request never reached Docker. This favors preventing restart storms.
+
+## Manual dashboard controls
+
+Select a container, press `x` (stop), `a` (start), `r` (restart), or `p` (toggle automatic recovery), then confirm with `y`. The confirmation pins the full container ID. Commands run through that container's worker, sharing the API limit and serializing with automatic recovery.
+
+Before stop/start/restart, Watchdog persists a recovery pause. Storage failure prevents the Docker request; failed or timed-out requests leave recovery paused. A successful start/restart resumes automatic recovery when globally enabled, preserves attempts, and starts a fresh cooldown. Stop keeps recovery paused across process restarts. This setting controls Watchdog only, not Docker's own restart policy.
+
+Monitoring continues while recovery is paused. `p` does not invoke Docker pause/unpause. Container removal, logs, and exec are not implemented; the HTTP API remains read-only.
 
 ## HTTP API
 
@@ -140,4 +148,3 @@ scripts/               Demo and preview helpers
 ```
 
 Tests cover backoff/caps, interrupted health resets, durable reservations, storage failures, cancellation under backpressure, worker lifecycle/concurrency, HTTP SDK behavior, database reopen/connection replacement, API validation, and terminal layout/keyboard behavior. Unit tests do not require Docker.
-

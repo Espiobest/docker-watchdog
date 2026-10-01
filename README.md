@@ -9,6 +9,7 @@ A Go terminal dashboard that monitors Docker containers, detects crash loops, an
 ## Features
 
 - Live CPU, memory, network, and health monitoring with keyboard navigation.
+- Confirmed start, stop, restart, and per-container recovery controls.
 - Concurrent container workers with a shared Docker API concurrency limit.
 - Automatic recovery with capped retries and crash-loop detection.
 - SQLite-backed retry budgets and incident history that survive restarts.
@@ -24,7 +25,7 @@ From the project directory:
 go run ./cmd/watchdog
 ```
 
-The dashboard opens automatically in a terminal. It starts in **observe-only mode** and refreshes container state every 3 seconds, with discovery every 5 seconds.
+The dashboard opens automatically in a terminal. **Automatic recovery is off by default.** State refreshes every 3 seconds, with discovery every 5 seconds. Manual actions require confirmation.
 
 To build a binary:
 
@@ -67,7 +68,11 @@ docker compose -p watchdog-demo --profile service down
 | `↑` / `↓` or `k` / `j` | Select container |
 | `PgUp` / `PgDn` | Scroll |
 | `s` | Sort by name, CPU, or memory |
+| `x` / `a` / `r` | Stop / start / restart selected container |
+| `p` | Pause / resume automatic recovery for selected container |
 | `q` / `Ctrl+C` | Quit |
+
+Confirm actions with `y`; cancel with `n` or `Esc`. Stopping through Watchdog saves a recovery pause so it stays stopped across Watchdog restarts. A successful start/restart resumes recovery if globally enabled, preserving the retry budget. `p` keeps monitoring active; it does not pause the container itself.
 
 ## Logs and API
 

@@ -18,6 +18,8 @@ type Policy struct {
 	lastStart      time.Time
 	crashes        []time.Time
 	expectOwnStart bool
+	recoveryPaused bool
+	seenRunning    bool
 }
 
 func NewPolicy(config Config) *Policy {
@@ -54,9 +56,15 @@ func (p *Policy) Evaluate(sample Sample, now time.Time) Decision {
 	p.observeStability(decision.Status, now)
 	decision.Attempts = p.attempts
 	decision.NextRetry = p.nextRetry
+	decision.RecoveryPaused = p.recoveryPaused
+	if p.recoveryPaused {
+		decision.Reason = "automatic recovery paused by user"
+		decision.NextRetry = time.Time{}
+		return decision
+	}
 
 	// A loop alone is an alert: do not kill a currently healthy recovery.
-	if !recoveryEligible(sample, p.config.RecoverExited) {
+	if !recoveryEligible(sample, p.config.RecoverExited && p.seenRunning) {
 		return decision
 	}
 	if dockerManagesRestarts(sample) {
@@ -158,6 +166,9 @@ func (p *Policy) observeStability(status Status, now time.Time) {
 }
 
 func (p *Policy) observeStarts(sample Sample, now time.Time) bool {
+	if sample.State == container.StateRunning || sample.State == container.StateRestarting {
+		p.seenRunning = true
+	}
 	if p.initialized {
 		delta := sample.RestartCount - p.lastCount
 		startChanged := !sample.StartedAt.IsZero() && !p.lastStart.IsZero() &&
@@ -172,11 +183,19 @@ func (p *Policy) observeStarts(sample Sample, now time.Time) bool {
 			}
 			p.expectOwnStart = false
 		}
+		if p.lastStart.IsZero() && !sample.StartedAt.IsZero() {
+			// A first explicit start has no previous timestamp to compare.
+			// Consume its marker now so a later external start is not hidden.
+			p.expectOwnStart = false
+		}
 		// Bound memory even if the counter jumps after a long outage.
 		delta = min(delta, p.config.CrashThreshold)
 		for range max(delta, 0) {
 			p.crashes = append(p.crashes, now)
 		}
+	}
+	if !p.initialized && !sample.StartedAt.IsZero() {
+		p.expectOwnStart = false
 	}
 	p.initialized = true
 	p.lastCount = sample.RestartCount

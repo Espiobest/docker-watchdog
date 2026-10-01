@@ -85,11 +85,12 @@ func (c Config) Validate() error {
 }
 
 type Decision struct {
-	Status    Status    `json:"status"`
-	Reason    string    `json:"reason,omitempty"`
-	Attempts  int       `json:"attempts"`
-	NextRetry time.Time `json:"next_retry"`
-	Restart   bool      `json:"-"`
+	Status         Status    `json:"status"`
+	Reason         string    `json:"reason,omitempty"`
+	Attempts       int       `json:"attempts"`
+	NextRetry      time.Time `json:"next_retry"`
+	Restart        bool      `json:"-"`
+	RecoveryPaused bool      `json:"recovery_paused"`
 }
 
 type Event struct {

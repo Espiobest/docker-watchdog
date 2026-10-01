@@ -29,7 +29,16 @@ const (
 type Action string
 
 const (
-	ActionRestarted      Action = "restarted"
-	ActionRestartFailed  Action = "restart-failed"
-	ActionRestartSkipped Action = "restart-skipped"
+	ActionRestarted        Action = "restarted"
+	ActionRestartFailed    Action = "restart-failed"
+	ActionRestartSkipped   Action = "restart-skipped"
+	ActionStopRequested    Action = "stop-requested"
+	ActionStartRequested   Action = "start-requested"
+	ActionRestartRequested Action = "manual-restart-requested"
+	ActionStopped          Action = "stopped"
+	ActionStarted          Action = "started"
+	ActionManualRestarted  Action = "manually-restarted"
+	ActionRecoveryPaused   Action = "recovery-paused"
+	ActionRecoveryResumed  Action = "recovery-resumed"
+	ActionControlFailed    Action = "control-failed"
 )

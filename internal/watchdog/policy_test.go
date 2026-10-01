@@ -117,6 +117,7 @@ func TestUnexpectedExitRecovery(t *testing.T) {
 	c.RecoverExited = true
 	p := NewPolicy(c)
 	now := time.Now()
+	p.Evaluate(Sample{State: "running"}, now.Add(-time.Second))
 	s := Sample{State: "exited", ExitCode: 1}
 	p.Evaluate(s, now)
 	if d := p.Evaluate(s, now.Add(c.BaseBackoff)); !d.Restart {

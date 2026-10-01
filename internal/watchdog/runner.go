@@ -13,21 +13,26 @@ import (
 var errNoLongerEligible = errors.New("container is no longer eligible for recovery")
 
 type Runner struct {
-	Engine  Engine
-	Config  Config
-	Journal Journal
+	Engine   Engine
+	Config   Config
+	Journal  Journal
+	Controls *Controller
 }
 
 type worker struct {
-	cancel context.CancelFunc
-	done   chan struct{}
-	name   string
+	cancel   context.CancelFunc
+	done     chan struct{}
+	name     string
+	commands chan controlRequest
 }
 
 // Run owns membership, workers own policy, and the caller owns aggregation.
 // The event channel closes only after all workers have stopped.
 func (r Runner) Run(ctx context.Context, events chan<- Event) error {
 	defer close(events)
+	if r.Controls != nil {
+		defer r.Controls.stop()
+	}
 	if err := r.Config.Validate(); err != nil {
 		return err
 	}
@@ -35,6 +40,10 @@ func (r Runner) Run(ctx context.Context, events chan<- Event) error {
 	workers := make(map[string]worker)
 	slots := make(chan struct{}, r.Config.MaxConcurrent)
 	var group sync.WaitGroup
+	var requests <-chan controlRequest
+	if r.Controls != nil {
+		requests = r.Controls.requests
+	}
 	defer func() {
 		cancel()
 		group.Wait()
@@ -52,6 +61,11 @@ func (r Runner) Run(ctx context.Context, events chan<- Event) error {
 				continue
 			}
 			adopt := item.State == container.StateRunning || item.State == container.StateRestarting
+			// Interactive controls also list stopped containers. Policy will
+			// not auto-recover an exit without a known or explicit prior start.
+			if r.Controls != nil {
+				adopt = true
+			}
 			if !adopt && item.State == container.StateExited && r.Journal != nil && r.Config.RecoverExited {
 				checkpoint, err := r.load(ctx, item.ID)
 				if err != nil {
@@ -64,12 +78,13 @@ func (r Runner) Run(ctx context.Context, events chan<- Event) error {
 			}
 			workerCtx, stop := context.WithCancel(ctx)
 			done := make(chan struct{})
-			workers[item.ID] = worker{cancel: stop, done: done, name: item.Name}
+			commands := make(chan controlRequest, 1)
+			workers[item.ID] = worker{cancel: stop, done: done, name: item.Name, commands: commands}
 			group.Add(1)
 			go func() {
 				defer group.Done()
 				defer close(done)
-				r.monitor(workerCtx, item, slots, events)
+				r.monitor(workerCtx, item, slots, events, commands)
 			}()
 		}
 		for id, active := range workers {
@@ -101,6 +116,21 @@ func (r Runner) Run(ctx context.Context, events chan<- Event) error {
 		select {
 		case <-ctx.Done():
 			return nil
+		case request := <-requests:
+			if request.ctx.Err() != nil {
+				request.reply <- request.ctx.Err()
+				continue
+			}
+			active, exists := workers[request.id]
+			if !exists {
+				request.reply <- errors.New("container is no longer tracked")
+				continue
+			}
+			select {
+			case active.commands <- request:
+			default:
+				request.reply <- errors.New("another command is already queued for this container")
+			}
 		case <-ticker.C:
 			err := discover()
 			if ctx.Err() != nil {
@@ -145,12 +175,18 @@ func (r Runner) inspect(ctx context.Context, slots chan struct{}, id string) (Sa
 }
 
 func (r Runner) call(ctx context.Context, slots chan struct{}, timeout time.Duration, operation func(context.Context) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	select {
 	case slots <- struct{}{}:
 	case <-ctx.Done():
 		return ctx.Err()
 	}
 	defer func() { <-slots }()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	return operation(ctx)
@@ -165,7 +201,8 @@ func (r Runner) load(ctx context.Context, id string) (Checkpoint, error) {
 	return r.Journal.Load(ctx, id)
 }
 
-func (r Runner) monitor(ctx context.Context, item Container, slots chan struct{}, events chan<- Event) {
+func (r Runner) monitor(ctx context.Context, item Container, slots chan struct{}, events chan<- Event, commands <-chan controlRequest) {
+	defer rejectPending(commands)
 	policy := NewPolicy(r.Config)
 	ticker := time.NewTicker(r.Config.PollInterval)
 	defer ticker.Stop()
@@ -188,10 +225,19 @@ func (r Runner) monitor(ctx context.Context, item Container, slots chan struct{}
 		}
 	}
 	for {
+		// Prefer queued user intent over beginning another automatic poll.
+		select {
+		case request := <-commands:
+			r.handleControl(ctx, request, policy, slots, events)
+			continue
+		default:
+		}
 		r.poll(ctx, item, policy, slots, events)
 		select {
 		case <-ctx.Done():
 			return
+		case request := <-commands:
+			r.handleControl(ctx, request, policy, slots, events)
 		case <-ticker.C:
 		}
 	}
@@ -207,7 +253,7 @@ func (r Runner) poll(ctx context.Context, item Container, policy *Policy, slots 
 		r.publish(ctx, events, Event{
 			Time:     time.Now(),
 			Sample:   Sample{ID: item.ID, Name: item.Name},
-			Decision: Decision{Status: StatusUnknown, Attempts: policy.attempts},
+			Decision: Decision{Status: StatusUnknown, Attempts: policy.attempts, RecoveryPaused: policy.recoveryPaused},
 			Error:    err.Error(),
 		}, nil)
 		return

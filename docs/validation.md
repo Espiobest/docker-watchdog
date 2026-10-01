@@ -26,11 +26,4 @@ The isolated `watchdog-demo` Compose project was used for these checks:
 7. The interactive terminal dashboard rendered and refreshed in a Windows pseudoterminal, then restored the terminal on timed shutdown.
 8. The built Linux service image monitored the Docker socket and exited cleanly after its configured runtime.
 
-## Review findings addressed
-
-- New container starts interrupt the stable-health timer, including starts below the crash-loop threshold.
-- A database operation losing its physical SQL connection no longer loses watchdog ownership: an independent OS file lock persists, and every replacement connection reapplies its SQLite settings.
-- An initial Docker API timeout returns a failure instead of being mistaken for normal process shutdown.
-- A clean dashboard quit during discovery treats cancellation as expected while preserving genuine startup timeout errors.
-
 The dashboard image in the README comes from a deterministic UI test fixture, not a claimed production workload. Regenerate it by exporting `WATCHDOG_PREVIEW` for `TestPreview`, then running `scripts/render_preview.py` on that ANSI file.

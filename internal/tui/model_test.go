@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -16,6 +17,7 @@ import (
 
 func fixture() model {
 	m := newModel(nil, Options{AutoRestart: true, Label: "watchdog.demo=true", MaxRetries: 3, Version: "v0.1.0"})
+	m.options.Control = func(context.Context, string, watchdog.Command) error { return nil }
 	m.now = time.Date(2026, 10, 1, 14, 30, 45, 0, time.UTC)
 	m.started = m.now.Add(-2*time.Minute - 18*time.Second)
 	m.width, m.height = 120, 32

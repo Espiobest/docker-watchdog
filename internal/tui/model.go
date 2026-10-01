@@ -16,21 +16,26 @@ type Options struct {
 	Endpoint    string
 	MaxRetries  int
 	Version     string
+	Control     func(context.Context, string, watchdog.Command) error
 }
 
 type model struct {
-	options     Options
-	events      <-chan watchdog.Event
-	rows        map[string]watchdog.Event
-	lastActions map[string]string
-	recent      []string
-	width       int
-	height      int
-	cursor      int
-	sortKey     int
-	now         time.Time
-	started     time.Time
-	systemError string
+	options       Options
+	events        <-chan watchdog.Event
+	rows          map[string]watchdog.Event
+	lastActions   map[string]string
+	recent        []string
+	width         int
+	height        int
+	cursor        int
+	sortKey       int
+	now           time.Time
+	started       time.Time
+	systemError   string
+	ctx           context.Context
+	pending       *confirmation
+	busy          bool
+	controlNotice string
 }
 
 type eventMessage struct{ event watchdog.Event }
@@ -43,11 +48,14 @@ func newModel(events <-chan watchdog.Event, options Options) model {
 		options: options, events: events,
 		rows: make(map[string]watchdog.Event), lastActions: make(map[string]string),
 		width: 100, height: 30, now: now, started: now,
+		ctx: context.Background(),
 	}
 }
 
 func Run(ctx context.Context, events <-chan watchdog.Event, options Options, input io.Reader, output io.Writer) error {
-	program := tea.NewProgram(newModel(events, options),
+	model := newModel(events, options)
+	model.ctx = ctx
+	program := tea.NewProgram(model,
 		tea.WithContext(ctx), tea.WithAltScreen(), tea.WithInput(input), tea.WithOutput(output))
 	_, err := program.Run()
 	return err
@@ -76,6 +84,9 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = message.Width, message.Height
 	case tea.KeyMsg:
+		if m.pending != nil {
+			return m.confirm(message.String())
+		}
 		switch message.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
@@ -94,6 +105,15 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "s":
 			m.sortKey = (m.sortKey + 1) % 3
 			m.cursor = 0
+		case "x", "a", "r", "p":
+			m.askControl(message.String())
+		}
+	case controlResult:
+		m.busy = false
+		if message.err != nil {
+			m.controlNotice = "Command failed: " + clean(message.err.Error())
+		} else {
+			m.controlNotice = string(message.command) + " completed for " + clean(message.name)
 		}
 	case tickMessage:
 		m.now = time.Time(message)
@@ -171,12 +191,16 @@ func (m model) ordered() []watchdog.Event {
 }
 
 func (m model) pageSize() int {
+	extra := 0
+	if m.options.Control != nil {
+		extra = 1
+	}
 	switch {
 	case m.height >= 25:
-		return max(1, m.height-23)
+		return max(1, m.height-23-extra)
 	case m.height >= 20:
-		return max(1, m.height-18)
+		return max(1, m.height-18-extra)
 	default:
-		return max(1, m.height-12)
+		return max(1, m.height-12-extra)
 	}
 }

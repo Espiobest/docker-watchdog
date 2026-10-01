@@ -106,11 +106,16 @@ func run() error {
 		version, config.monitor.AutoRestart, config.label, docker.DaemonHost())
 
 	events := make(chan watchdog.Event, 128)
+	var controls *watchdog.Controller
+	if config.output == "table" {
+		controls = watchdog.NewController()
+	}
 	done := make(chan error, 1)
 	runner := watchdog.Runner{
-		Engine:  &dockerengine.Engine{Client: docker, Label: config.label},
-		Config:  config.monitor,
-		Journal: journal,
+		Engine:   &dockerengine.Engine{Client: docker, Label: config.label},
+		Config:   config.monitor,
+		Journal:  journal,
+		Controls: controls,
 	}
 	go func() {
 		done <- runner.Run(ctx, events)
@@ -126,6 +131,7 @@ func run() error {
 			Endpoint:    docker.DaemonHost(),
 			MaxRetries:  config.monitor.MaxRetries,
 			Version:     version,
+			Control:     controls.Do,
 		}, os.Stdin, os.Stdout)
 		cleanUIExit = outputError == nil
 		processStopped = ctx.Err() != nil

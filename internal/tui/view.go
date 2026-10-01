@@ -27,7 +27,7 @@ func (m model) View() string {
 		return "Watchdog needs a terminal of at least 48 × 15.\nResize the window, or press q to quit."
 	}
 	width := m.width - 4
-	mode := "OBSERVE ONLY"
+	mode := "AUTO RECOVERY OFF"
 	if m.options.AutoRestart {
 		mode = "AUTO RECOVERY"
 	}
@@ -57,11 +57,15 @@ func (m model) View() string {
 		lipgloss.NewStyle().Foreground(red).Render(fmt.Sprintf("! %d attention", attention))
 
 	sections := []string{header, subtitle, "", summary, "", m.table(width)}
+	if m.pending != nil {
+		content := header + "\n\n" + m.confirmationView(width)
+		return lipgloss.NewStyle().Padding(1, 2).MaxWidth(m.width).MaxHeight(m.height).Render(content)
+	}
 	rows := m.ordered()
 	if len(rows) > 0 && m.height >= 20 {
 		sections = append(sections, "", m.details(rows[m.cursor], width))
 	} else if len(rows) == 0 {
-		sections = append(sections, "", dim.Render("Waiting for matching running containers…"))
+		sections = append(sections, "", dim.Render("Waiting for matching containers…"))
 	}
 	if m.height >= 25 {
 		sections = append(sections, "", dim.Render("RECENT TRANSITIONS"))
@@ -71,9 +75,14 @@ func (m model) View() string {
 	}
 	if m.systemError != "" {
 		sections[1] = lipgloss.NewStyle().Foreground(red).Render(fit(m.systemError, width))
+	} else if m.controlNotice != "" {
+		sections[1] = lipgloss.NewStyle().Foreground(accent).Render(fit(m.controlNotice, width))
 	}
 	sortName := []string{"name", "cpu ↓", "memory ↓"}[m.sortKey]
 	footer := dim.Render("↑/↓ j/k select   s sort: " + sortName + "   q quit")
+	if m.options.Control != nil {
+		footer = dim.Render("↑/↓ select · s sort · q quit\nx stop · a start · r restart · p recovery")
+	}
 	sections = append(sections, "", footer)
 	content := strings.Join(sections, "\n")
 	return lipgloss.NewStyle().Padding(1, 2).MaxWidth(m.width).MaxHeight(m.height).Render(content)
@@ -158,6 +167,9 @@ func (m model) details(event watchdog.Event, width int) string {
 		note = "Next recovery in " + remaining.String() + "  ·  " + note
 	}
 	action := m.lastActions[event.ID]
+	if event.RecoveryPaused {
+		note = "RECOVERY PAUSED  ·  " + note
+	}
 	if action == "" {
 		action = "No recovery action taken"
 	}

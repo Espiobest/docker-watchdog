@@ -28,6 +28,9 @@ func (m model) View() string {
 		return "Watchdog needs a terminal of at least 48 x 15.\nResize the window, or press q to quit."
 	}
 	width := m.width - 4
+	if m.logs != nil {
+		return m.logsView()
+	}
 	mode := "AUTO RECOVERY OFF"
 	if m.options.AutoRestart {
 		mode = "AUTO RECOVERY"
@@ -76,6 +79,8 @@ func (m model) View() string {
 	}
 	if m.systemError != "" {
 		sections[1] = lipgloss.NewStyle().Foreground(red).Render(fit(m.systemError, width))
+	} else if m.streamError != "" {
+		sections[1] = lipgloss.NewStyle().Foreground(amber).Render(fit(m.streamError, width))
 	} else if m.controlNotice != "" {
 		sections[1] = lipgloss.NewStyle().Foreground(accent).Render(fit(m.controlNotice, width))
 	}
@@ -83,6 +88,9 @@ func (m model) View() string {
 	footer := dim.Render("↑/↓ j/k select   s sort: " + sortName + "   q quit")
 	if m.options.Control != nil {
 		footer = dim.Render("↑/↓ select · s sort · q quit\nx stop · a start · r restart · p recovery")
+		if m.options.Logs != nil {
+			footer = dim.Render("↑/↓ select · s sort · l logs · q quit\nx stop · a start · r restart · p recovery")
+		}
 	}
 	sections = append(sections, "", footer)
 	content := strings.Join(sections, "\n")

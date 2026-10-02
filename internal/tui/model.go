@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"sort"
+	"sync"
 	"time"
 
 	"docker-watchdog/internal/watchdog"
@@ -17,6 +18,7 @@ type Options struct {
 	MaxRetries  int
 	Version     string
 	Control     func(context.Context, string, watchdog.Command) error
+	Logs        func(context.Context, string, func(watchdog.LogLine) error) error
 }
 
 type model struct {
@@ -36,6 +38,9 @@ type model struct {
 	pending       *confirmation
 	busy          bool
 	controlNotice string
+	streamError   string
+	logs          *logSession
+	logWorkers    *sync.WaitGroup
 }
 
 type eventMessage struct{ event watchdog.Event }
@@ -48,12 +53,14 @@ func newModel(events <-chan watchdog.Event, options Options) model {
 		options: options, events: events,
 		rows: make(map[string]watchdog.Event), lastActions: make(map[string]string),
 		width: 100, height: 30, now: now, started: now,
-		ctx: context.Background(),
+		ctx: context.Background(), logWorkers: &sync.WaitGroup{},
 	}
 }
 
 func Run(ctx context.Context, events <-chan watchdog.Event, options Options, input io.Reader, output io.Writer) error {
+	ctx, cancel := context.WithCancel(ctx)
 	model := newModel(events, options)
+	defer func() { cancel(); model.logWorkers.Wait() }()
 	model.ctx = ctx
 	program := tea.NewProgram(model,
 		tea.WithContext(ctx), tea.WithAltScreen(), tea.WithInput(input), tea.WithOutput(output))
@@ -84,6 +91,9 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = message.Width, message.Height
 	case tea.KeyMsg:
+		if m.logs != nil {
+			return m.logKey(message.String())
+		}
 		if m.pending != nil {
 			return m.confirm(message.String())
 		}
@@ -105,6 +115,12 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "s":
 			m.sortKey = (m.sortKey + 1) % 3
 			m.cursor = 0
+		case "l":
+			if m.options.Logs != nil && len(m.rows) > 0 {
+				selected := m.ordered()[m.cursor]
+				cmd := m.openLogs(selected.ID, selected.Name)
+				return m, cmd
+			}
 		case "x", "a", "r", "p":
 			m.askControl(message.String())
 		}
@@ -115,6 +131,8 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.controlNotice = string(message.command) + " completed for " + clean(message.name)
 		}
+	case logMessage:
+		return m.updateLogs(message)
 	case tickMessage:
 		m.now = time.Time(message)
 		return m, tick()
@@ -134,6 +152,10 @@ func (m *model) accept(event watchdog.Event) {
 		selected = ordered[m.cursor].ID
 	}
 	if event.ID == "" {
+		if event.Status == watchdog.StatusEventStreamError || event.Status == watchdog.StatusEventStreamConnected {
+			m.streamError = event.Error
+			return
+		}
 		m.systemError = event.Error
 		return
 	}

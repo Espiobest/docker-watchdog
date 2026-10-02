@@ -111,8 +111,9 @@ func run() error {
 		controls = watchdog.NewController()
 	}
 	done := make(chan error, 1)
+	engine := &dockerengine.Engine{Client: docker, Label: config.label}
 	runner := watchdog.Runner{
-		Engine:   &dockerengine.Engine{Client: docker, Label: config.label},
+		Engine:   engine,
 		Config:   config.monitor,
 		Journal:  journal,
 		Controls: controls,
@@ -132,6 +133,7 @@ func run() error {
 			MaxRetries:  config.monitor.MaxRetries,
 			Version:     version,
 			Control:     controls.Do,
+			Logs:        engine.Logs,
 		}, os.Stdin, os.Stdout)
 		cleanUIExit = outputError == nil
 		processStopped = ctx.Err() != nil

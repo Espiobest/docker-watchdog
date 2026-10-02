@@ -7,6 +7,9 @@
 ```mermaid
 flowchart LR
     Docker[Docker Engine] --> Discovery[Periodic discovery]
+    Docker --> Events[Lifecycle event stream]
+    Events -->|refresh hints| Discovery
+    Events -->|wake worker| A
     Discovery --> A[Container worker A]
     Discovery --> B[Container worker B]
     A --> Policy[Per-container recovery policy]
@@ -46,7 +49,23 @@ Select a container, press `x` (stop), `a` (start), `r` (restart), or `p` (toggle
 
 Before stop/start/restart, Watchdog persists a recovery pause. Storage failure prevents the Docker request; failed or timed-out requests leave recovery paused. A successful start/restart resumes automatic recovery when globally enabled, preserves attempts, and starts a fresh cooldown. Stop keeps recovery paused across process restarts. This setting controls Watchdog only, not Docker's own restart policy.
 
-Monitoring continues while recovery is paused. `p` does not invoke Docker pause/unpause. Container removal, logs, and exec are not implemented; the HTTP API remains read-only.
+Monitoring continues while recovery is paused. `p` does not invoke Docker pause/unpause. Container removal and exec are not implemented; the HTTP API remains read-only.
+
+## Live container logs
+
+`l` opens a read-only log view for the selected full container ID, requests the latest 200 lines, and follows new output. Non-TTY stdout/stderr are demultiplexed using the Docker SDK's stream format; TTY output is a combined stream. Docker timestamps are retained. ANSI escapes and control characters are removed before rendering.
+
+The UI retains 500 lines/chunks, with a 64-entry producer queue and bounded batches. Long lines are split around 4 KiB on UTF-8 boundaries (at most 4,099 bytes per chunk), and displayed lines are clipped to terminal width. Logs are not persisted in SQLite. A logging driver must support Docker's logs API; failures appear in the log view.
+
+Use arrows/`PgUp`/`PgDn` to scroll, `Home` to reach the oldest retained output, and `f`/`End` to follow the tail. `Esc`, `l`, or `q` closes the view and cancels its stream; `Ctrl+C` quits Watchdog. `r` reconnects and reloads recent output, including after a container exits or restarts. Container actions are available after returning to the dashboard. Monitoring continues while logs are open.
+
+## Docker lifecycle events
+
+One label-filtered Docker event stream runs alongside periodic polling. Lifecycle and health events enqueue refresh hints for the owning worker and batch discovery within 100 ms. The worker still inspects actual state and applies the same recovery policy; events never mutate policy or issue recovery directly. A busy worker handles the hint after its current operation.
+
+Connection errors are visible in logs and the dashboard. Reconnect delays increase from 1 second to a maximum of 30 seconds, resetting after a connection lasts a minute. Each successful connection triggers reconciliation and worker refreshes. There is no event replay or exactly-once delivery guarantee: a bounded hint queue coalesces/drops excess hints, while scheduled polling/discovery catch current state. Short-lived intermediate states can still be missed, and events do not establish who intended a stop.
+
+Log and event streams have five-second connection setup deadlines and cancellation-driven shutdown. Their long-lived connections do not occupy the semaphore used for polling and mutations. A dashboard opens one log view at a time; closing/reconnecting cancels the previous subscription.
 
 ## HTTP API
 

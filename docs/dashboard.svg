@@ -42,6 +42,6 @@
 <text x="37" y="566" fill="#8a8a8a" font-family="Cascadia Code,DejaVu Sans Mono,monospace" font-size="14" font-weight="normal" xml:space="preserve" textLength="314.5" lengthAdjust="spacingAndGlyphs">14:30:44  payments-worker  →  backoff</text>
 <text x="37" y="589" fill="#8a8a8a" font-family="Cascadia Code,DejaVu Sans Mono,monospace" font-size="14" font-weight="normal" xml:space="preserve" textLength="331.5" lengthAdjust="spacingAndGlyphs">14:30:44  event-consumer  →  crash-loop</text>
 <text x="37" y="612" fill="#8a8a8a" font-family="Cascadia Code,DejaVu Sans Mono,monospace" font-size="14" font-weight="normal" xml:space="preserve" textLength="374" lengthAdjust="spacingAndGlyphs">14:30:44  legacy-service  →  retry-exhausted</text>
-<text x="37" y="658" fill="#8a8a8a" font-family="Cascadia Code,DejaVu Sans Mono,monospace" font-size="14" font-weight="normal" xml:space="preserve" textLength="238" lengthAdjust="spacingAndGlyphs">↑/↓ select · s sort · q quit</text>
+<text x="37" y="658" fill="#8a8a8a" font-family="Cascadia Code,DejaVu Sans Mono,monospace" font-size="14" font-weight="normal" xml:space="preserve" textLength="314.5" lengthAdjust="spacingAndGlyphs">↑/↓ select · s sort · l logs · q quit</text>
 <text x="37" y="681" fill="#8a8a8a" font-family="Cascadia Code,DejaVu Sans Mono,monospace" font-size="14" font-weight="normal" xml:space="preserve" textLength="348.5" lengthAdjust="spacingAndGlyphs">x stop · a start · r restart · p recovery</text>
 </svg>

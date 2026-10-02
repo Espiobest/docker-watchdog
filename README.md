@@ -10,6 +10,7 @@ A Go terminal dashboard that monitors Docker containers, detects crash loops, an
 
 - Live CPU, memory, network, and health monitoring with keyboard navigation.
 - Confirmed start, stop, restart, and per-container recovery controls.
+- Live container logs with scrolling, plus Docker events for faster state updates.
 - Concurrent container workers with a shared Docker API concurrency limit.
 - Automatic recovery with capped retries and crash-loop detection.
 - SQLite-backed retry budgets and incident history that survive restarts.
@@ -25,7 +26,7 @@ From the project directory:
 go run ./cmd/watchdog
 ```
 
-The dashboard opens automatically in a terminal. **Automatic recovery is off by default.** State refreshes every 3 seconds, with discovery every 5 seconds. Manual actions require confirmation.
+The dashboard opens automatically in a terminal. **Automatic recovery is off by default.** Docker events trigger state refreshes, with polling every 3 seconds and discovery every 5 seconds as a fallback. Manual actions require confirmation.
 
 To build a binary:
 
@@ -70,6 +71,7 @@ docker compose -p watchdog-demo --profile service down
 | `s` | Sort by name, CPU, or memory |
 | `x` / `a` / `r` | Stop / start / restart selected container |
 | `p` | Pause / resume automatic recovery for selected container |
+| `l` | Open selected container's live logs |
 | `q` / `Ctrl+C` | Quit |
 
 Confirm actions with `y`; cancel with `n` or `Esc`. Stopping through Watchdog saves a recovery pause so it stays stopped across Watchdog restarts. A successful start/restart resumes recovery if globally enabled, preserving the retry budget. `p` keeps monitoring active; it does not pause the container itself.
@@ -77,6 +79,10 @@ Confirm actions with `y`; cancel with `n` or `Esc`. Stopping through Watchdog sa
 Successful Watchdog stops show `stopped`, including forced stops with a nonzero exit code. External nonzero exits still show `crashed`; polling cannot reliably identify stops made in another app.
 
 ## Logs and API
+
+Press `l` for the latest 200 container log lines and live output. Use arrows or `PgUp`/`PgDn` to scroll, `f` to follow, `r` to reconnect, and `Esc` to return. The view retains 500 lines/chunks; stdout and stderr are labeled. Monitoring continues in the background.
+
+For Watchdog's own monitoring events as JSON:
 
 ```sh
 go run ./cmd/watchdog --output=json

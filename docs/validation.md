@@ -29,3 +29,11 @@ The isolated `watchdog-demo` Compose project was used for these checks:
 Manual controls were additionally tested against a separate disposable container: confirmed stop left exit code 137 with recovery paused, including after relaunch with the same database and exit recovery enabled. Confirmed start and restart succeeded without consuming automatic attempts. Recovery pause/resume kept the container running and monitoring active. The test container was removed afterward.
 
 The dashboard image in the README comes from a deterministic UI test fixture, not a claimed production workload. Regenerate it by exporting `WATCHDOG_PREVIEW` for `TestPreview`, then running `scripts/render_preview.py` on that ANSI file.
+
+## Streaming validation (October 2, 2026)
+
+- SDK HTTP tests cover multiplexed stdout/stderr, TTY logs, partial frames, bounded Unicode chunks, lifecycle event filtering, and cancellation of idle connections.
+- Runner tests cover event-driven refresh/discovery/removal, reconciliation after reconnect, and cancellation during reconnect backoff. UI tests cover bounded history, sanitized output, narrow layouts, scrolling, reconnect isolation, errors, and closing a blocked producer.
+- Vet, Staticcheck v0.8.1, and tests with the race detector passed.
+- A disposable Docker container emitted stdout/stderr into the live terminal viewer. Scrolling, following, returning to the dashboard, stream EOF after stop, and reconnect after start were exercised.
+- With polling and discovery both set to one minute, an external pause appeared in the API in approximately 0.34 seconds; a new container was discovered in approximately 1.47 seconds, including Docker startup time. These are local smoke-test observations, not performance guarantees. Test containers were removed afterward.

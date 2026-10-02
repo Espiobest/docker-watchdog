@@ -24,6 +24,7 @@ type worker struct {
 	done     chan struct{}
 	name     string
 	commands chan controlRequest
+	wake     chan struct{}
 }
 
 // Run owns membership, workers own policy, and the caller owns aggregation.
@@ -48,6 +49,19 @@ func (r Runner) Run(ctx context.Context, events chan<- Event) error {
 		cancel()
 		group.Wait()
 	}()
+	notices := make(chan engineNotice, 64)
+	if source, ok := r.Engine.(EventSource); ok {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			watchEvents(ctx, source, notices)
+		}()
+	}
+	// Batch bursts (for example create/start/die) into one discovery call.
+	refreshTimer := time.NewTimer(time.Hour)
+	refreshTimer.Stop()
+	defer refreshTimer.Stop()
+	var refresh <-chan time.Time
 
 	discover := func() error {
 		containers, err := r.list(ctx, slots)
@@ -79,12 +93,13 @@ func (r Runner) Run(ctx context.Context, events chan<- Event) error {
 			workerCtx, stop := context.WithCancel(ctx)
 			done := make(chan struct{})
 			commands := make(chan controlRequest, 1)
-			workers[item.ID] = worker{cancel: stop, done: done, name: item.Name, commands: commands}
+			wake := make(chan struct{}, 1)
+			workers[item.ID] = worker{cancel: stop, done: done, name: item.Name, commands: commands, wake: wake}
 			group.Add(1)
 			go func() {
 				defer group.Done()
 				defer close(done)
-				r.monitor(workerCtx, item, slots, events, commands)
+				r.monitor(workerCtx, item, slots, events, commands, wake)
 			}()
 		}
 		for id, active := range workers {
@@ -112,10 +127,43 @@ func (r Runner) Run(ctx context.Context, events chan<- Event) error {
 	ticker := time.NewTicker(r.Config.DiscoveryInterval)
 	defer ticker.Stop()
 	discoveryFailed := false
+	reconcile := func() {
+		err := discover()
+		if ctx.Err() != nil {
+			return
+		}
+		if err != nil {
+			discoveryFailed = true
+			r.publish(ctx, events, Event{Time: time.Now(), Decision: Decision{Status: StatusDiscoveryError}, Error: err.Error()}, nil)
+		} else if discoveryFailed {
+			discoveryFailed = false
+			r.publish(ctx, events, Event{Time: time.Now(), Decision: Decision{Status: StatusDiscoveryRestored}}, nil)
+		}
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
+		case notice := <-notices:
+			if notice.err != nil {
+				r.publish(ctx, events, Event{Time: time.Now(), Decision: Decision{Status: StatusEventStreamError}, Error: "Docker events disconnected; polling continues: " + notice.err.Error()}, nil)
+				continue
+			}
+			if notice.id == "" {
+				r.publish(ctx, events, Event{Time: time.Now(), Decision: Decision{Status: StatusEventStreamConnected}}, nil)
+			}
+			for id, active := range workers {
+				if notice.id == "" || notice.id == id {
+					select {
+					case active.wake <- struct{}{}:
+					default:
+					}
+				}
+			}
+			if refresh == nil {
+				refreshTimer.Reset(100 * time.Millisecond)
+				refresh = refreshTimer.C
+			}
 		case request := <-requests:
 			if request.ctx.Err() != nil {
 				request.reply <- request.ctx.Err()
@@ -131,25 +179,11 @@ func (r Runner) Run(ctx context.Context, events chan<- Event) error {
 			default:
 				request.reply <- errors.New("another command is already queued for this container")
 			}
+		case <-refresh:
+			refresh = nil
+			reconcile()
 		case <-ticker.C:
-			err := discover()
-			if ctx.Err() != nil {
-				return nil
-			}
-			if err != nil {
-				discoveryFailed = true
-				r.publish(ctx, events, Event{
-					Time:     time.Now(),
-					Decision: Decision{Status: StatusDiscoveryError},
-					Error:    err.Error(),
-				}, nil)
-			} else if discoveryFailed {
-				discoveryFailed = false
-				r.publish(ctx, events, Event{
-					Time:     time.Now(),
-					Decision: Decision{Status: StatusDiscoveryRestored},
-				}, nil)
-			}
+			reconcile()
 		}
 	}
 }
@@ -201,7 +235,7 @@ func (r Runner) load(ctx context.Context, id string) (Checkpoint, error) {
 	return r.Journal.Load(ctx, id)
 }
 
-func (r Runner) monitor(ctx context.Context, item Container, slots chan struct{}, events chan<- Event, commands <-chan controlRequest) {
+func (r Runner) monitor(ctx context.Context, item Container, slots chan struct{}, events chan<- Event, commands <-chan controlRequest, wake <-chan struct{}) {
 	defer rejectPending(commands)
 	policy := NewPolicy(r.Config)
 	ticker := time.NewTicker(r.Config.PollInterval)
@@ -238,6 +272,7 @@ func (r Runner) monitor(ctx context.Context, item Container, slots chan struct{}
 			return
 		case request := <-commands:
 			r.handleControl(ctx, request, policy, slots, events)
+		case <-wake:
 		case <-ticker.C:
 		}
 	}
